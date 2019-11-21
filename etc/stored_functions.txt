@@ -25,7 +25,7 @@ AS $$
 BEGIN
 	RETURN QUERY SELECT log_timestamp::date, COUNT(*)
 	FROM logdb.logdbapp_log
-	WHERE log_type = logtype AND log_timestamp >= f AND log_timestamp <= t
+	WHERE log_type = logtype AND (log_timestamp BETWEEN f and t)
 	GROUP BY log_timestamp::date;	
 END; $$
 
@@ -90,7 +90,7 @@ BEGIN
 	FROM logdb.logdbapp_access_arguments as A
 	WHERE A.access_arguments_referer != ''
 	GROUP BY A.access_arguments_referer
-	HAVING COUNT(A.access_arguments_resource) > 1;
+	HAVING COUNT(DISTINCT A.access_arguments_resource) > 1;
 END; $$
 
 LANGUAGE 'plpgsql';
@@ -110,7 +110,8 @@ BEGIN
 			        GROUP BY A.access_arguments_resource
 		    ) as B
 	) as C
-    WHERE C.the_rank = 2;
+    WHERE C.the_rank <= 2
+	LIMIT 1;
 END; $$
 
 LANGUAGE 'plpgsql';
@@ -225,7 +226,7 @@ BEGIN
 	RETURN QUERY
 	SELECT distinct A.source_ip
 	FROM logdb.logdbapp_log as A join logdb.logdbapp_access_arguments as B on A.log_id = B.access_arguments_log_id
-	WHERE B.access_arguments_http_method = method AND A.log_timestamp >= f AND A.log_timestamp <= t;
+	WHERE B.access_arguments_http_method = method AND A.log_timestamp BETWEEN f AND t;
 	 
 END; $$
 
@@ -294,6 +295,34 @@ BEGIN
 		FROM logdb.logdbapp_namesystem_destinations as A
 		WHERE A.namesystem_destinations_dest_ip = ip
 	) as A;
+END; $$
+
+LANGUAGE 'plpgsql';
+
+#Alternative query for 4
+CREATE OR REPLACE FUNCTION logdb.stored_function4_2nd_approach(f date, t date)
+	RETURNS TABLE (
+		block_id VARCHAR(50)
+	)
+AS $$
+BEGIN
+	RETURN QUERY
+	SELECT E.block_id
+	FROM	(SELECT D.block_id as block_id, AVG(D.num_logs) as num_avg
+		FROM   (SELECT B.block_id as block_id, A.log_timestamp::date as log_day, COUNT(*) as num_logs 
+			FROM logdb.logdbapp_log as A join
+			(SELECT C.log_id, C.block_id
+			FROM	(SELECT dataxceiver_arguments_log_id as log_id, dataxceiver_arguments_block_id as block_id
+				    FROM logdb.logdbapp_dataxceiver_arguments
+				    UNION ALL
+				    SELECT namesystem_blocks_log_id as log_id, namesystem_blocks_block_id as block_id
+				    FROM logdb.logdbapp_namesystem_blocks) AS C
+			) as B ON A.log_id = B.log_id
+			WHERE A.log_timestamp::date BETWEEN f and t
+			GROUP BY B.block_id, A.log_timestamp::date ) as D
+		GROUP BY D.block_id
+		ORDER BY num_avg DESC ) as E
+	LIMIT 5;
 END; $$
 
 LANGUAGE 'plpgsql';

@@ -1,0 +1,299 @@
+1.
+CREATE OR REPLACE FUNCTION logdb.stored_function1(f timestamp with time zone, t timestamp with time zone)
+	RETURNS TABLE (
+		logtype VARCHAR,
+		num_logs BIGINT
+	)
+AS $$
+BEGIN
+	RETURN QUERY SELECT log_type, COUNT(*) as num
+	FROM logdb.logdbapp_log
+	WHERE log_timestamp BETWEEN f AND t
+	GROUP BY log_type
+	ORDER BY num DESC;	
+END; $$
+
+LANGUAGE 'plpgsql';
+
+2.
+CREATE OR REPLACE FUNCTION logdb.stored_function2(logtype varchar, f timestamp, t timestamp)
+	RETURNS TABLE (
+		logday date,
+		num_logs BIGINT
+	)
+AS $$
+BEGIN
+	RETURN QUERY SELECT log_timestamp::date, COUNT(*)
+	FROM logdb.logdbapp_log
+	WHERE log_type = logtype AND log_timestamp >= f AND log_timestamp <= t
+	GROUP BY log_timestamp::date;	
+END; $$
+
+LANGUAGE 'plpgsql';
+
+3.
+CREATE OR REPLACE FUNCTION logdb.stored_function3(d date)
+	RETURNS TABLE (
+		logday VARCHAR(50) ,
+		log_type VARCHAR(20)
+	)
+AS $$
+BEGIN
+		RETURN QUERY with tmp(source_ip, log_type, type_count) as
+		(select L.source_ip, L.log_type, count(*)
+		from logdb.logdbapp_log as L
+		WHERE log_timestamp::date = d
+		group by  L.source_ip, L.log_type
+		)
+		select a.source_ip, a.log_type 
+		from tmp as a
+		inner join 
+		(select source_ip, max(type_count) as counter
+		from tmp group by source_ip) as b 
+		on a.source_ip = b.source_ip AND a.type_count = b.counter;
+END; $$
+
+LANGUAGE 'plpgsql';
+
+4.
+CREATE OR REPLACE FUNCTION logdb.stored_function4(f date, t date)
+	RETURNS TABLE (
+		block_id VARCHAR(50)
+	)
+AS $$
+BEGIN
+	RETURN QUERY
+	SELECT A.block_id
+	FROM
+	(	SELECT dataxceiver_arguments_log_id as log_id, dataxceiver_arguments_block_id as block_id
+		FROM logdb.logdbapp_dataxceiver_arguments
+		UNION ALL
+		SELECT namesystem_blocks_log_id as log_id, namesystem_blocks_block_id as block_id
+		FROM logdb.logdbapp_namesystem_blocks
+	) as A join logdb.logdbapp_log as B ON A.log_id = B.log_id
+	WHERE B.log_timestamp::date >= f AND B.log_timestamp::date <= t
+	GROUP BY A.block_id
+	ORDER BY COUNT(A.block_id) DESC
+	LIMIT 5;
+END; $$
+
+LANGUAGE 'plpgsql';
+
+5.
+CREATE OR REPLACE FUNCTION logdb.stored_function5()
+	RETURNS TABLE (
+		referer text
+	)
+AS $$
+BEGIN
+	RETURN QUERY SELECT A.access_arguments_referer
+	FROM logdb.logdbapp_access_arguments as A
+	WHERE A.access_arguments_referer != ''
+	GROUP BY A.access_arguments_referer
+	HAVING COUNT(A.access_arguments_resource) > 1;
+END; $$
+
+LANGUAGE 'plpgsql';
+
+6.
+CREATE OR REPLACE FUNCTION logdb.stored_function6()
+	RETURNS TABLE (
+		resource text
+	)
+AS $$
+BEGIN
+	RETURN QUERY
+	SELECT C.res
+	FROM  	(SELECT B.res, rank() over (order by B.num_re desc) as the_rank 
+		    FROM 	(SELECT A.access_arguments_resource as res, COUNT(*) as num_re
+			        FROM logdb.logdbapp_access_arguments as A
+			        GROUP BY A.access_arguments_resource
+		    ) as B
+	) as C
+    WHERE C.the_rank = 2;
+END; $$
+
+LANGUAGE 'plpgsql';
+
+7.
+CREATE OR REPLACE FUNCTION logdb.stored_function7(size integer)
+	RETURNS TABLE (
+		log_id integer,
+		log_timestamp timestamp with time zone,
+		log_type varchar(20),
+		source_ip varchar(50),
+		access_arguments_log_id integer,
+		access_arguments_user_id varchar(50),
+		access_arguments_http_method varchar(20),
+		access_arguments_resource text,
+		access_arguments_response integer,
+		access_arguments_size integer,
+		access_arguments_referer text,
+		access_arguments_agent_string text
+	)
+AS $$
+BEGIN
+	RETURN QUERY
+	SELECT *
+	FROM
+	logdb.logdbapp_log as A join (	SELECT * FROM logdb.logdbapp_access_arguments as B
+					WHERE B.access_arguments_size < size
+				     ) as C
+	ON A.log_id = C.access_arguments_log_id;
+END; $$
+
+LANGUAGE 'plpgsql';
+
+8.
+CREATE OR REPLACE FUNCTION logdb.stored_function8()
+	RETURNS TABLE (
+		block_id VARCHAR(50)
+	)
+AS $$
+BEGIN
+	RETURN QUERY
+	SELECT B.namesystem_blocks_block_id
+	FROM logdb.logdbapp_log as A join logdb.logdbapp_namesystem_blocks as B ON A.log_id = B.namesystem_blocks_log_id
+	WHERE A.log_type = 'replicate' AND (A.log_timestamp::date, B.namesystem_blocks_block_id) IN
+		(SELECT E.log_timestamp::date, E.block_id
+		FROM	(SELECT C.log_timestamp as log_timestamp, D.dataxceiver_arguments_block_id as block_id
+			    FROM logdb.logdbapp_log as C join logdb.logdbapp_dataxceiver_arguments as D
+			    ON C.log_id = D.dataxceiver_arguments_log_id
+			    WHERE C.log_type = 'served'
+			    ) as E
+		);
+END; $$
+
+LANGUAGE 'plpgsql';
+
+9.
+CREATE OR REPLACE FUNCTION logdb.stored_function9()
+	RETURNS TABLE (
+		block_id VARCHAR(50)
+	)
+AS $$
+BEGIN
+	RETURN QUERY
+	SELECT B.namesystem_blocks_block_id
+	FROM logdb.logdbapp_log as A join logdb.logdbapp_namesystem_blocks as B ON A.log_id = B.namesystem_blocks_log_id
+	WHERE A.log_type = 'replicate' AND (A.log_timestamp::date, extract(hour from A.log_timestamp), B.namesystem_blocks_block_id) IN
+		(SELECT E.log_timestamp::date, extract(hour from E.log_timestamp), E.block_id
+		FROM	(SELECT C.log_timestamp as log_timestamp, D.dataxceiver_arguments_block_id as block_id
+			    FROM logdb.logdbapp_log as C join logdb.logdbapp_dataxceiver_arguments as D
+			    ON C.log_id = D.dataxceiver_arguments_log_id
+			    WHERE C.log_type = 'served'
+			    ) as E
+		);
+END; $$
+
+LANGUAGE 'plpgsql';
+
+10.
+CREATE OR REPLACE FUNCTION logdb.stored_function10(v varchar(20))
+	RETURNS TABLE (
+		log_id integer,
+		log_timestamp timestamp with time zone,
+		log_type varchar(20),
+		source_ip varchar(50),
+		access_arguments_log_id integer,
+		access_arguments_user_id varchar(50),
+		access_arguments_http_method varchar(20),
+		access_arguments_resource text,
+		access_arguments_response integer,
+		access_arguments_size integer,
+		access_arguments_referer text,
+		access_arguments_agent_string text
+	)
+AS $$
+BEGIN
+	RETURN QUERY
+	SELECT * FROM logdb.logdbapp_log as A join logdb.logdbapp_access_arguments as B
+	ON A.log_id = B.access_arguments_log_id
+	WHERE B.access_arguments_agent_string LIKE ('%Firefox/'||v||' %') OR B.access_arguments_agent_string LIKE ('%Firefox/'||v);
+	
+END; $$
+
+LANGUAGE 'plpgsql';
+
+11.
+CREATE OR REPLACE FUNCTION logdb.stored_function11(method VARCHAR(20), f timestamp, t timestamp)
+	RETURNS TABLE (
+		source_ip VARCHAR(50)
+	)
+AS $$
+BEGIN
+	RETURN QUERY
+	SELECT distinct A.source_ip
+	FROM logdb.logdbapp_log as A join logdb.logdbapp_access_arguments as B on A.log_id = B.access_arguments_log_id
+	WHERE B.access_arguments_http_method = method AND A.log_timestamp >= f AND A.log_timestamp <= t;
+	 
+END; $$
+
+LANGUAGE 'plpgsql';
+
+12.
+CREATE OR REPLACE FUNCTION logdb.stored_function12(method1 VARCHAR(20), method2 VARCHAR(20), f timestamp, t timestamp)
+	RETURNS TABLE (
+		source_ip VARCHAR(50)
+	)
+AS $$
+BEGIN
+	RETURN QUERY
+	WITH joined_log_and_access_arguments as
+	(SELECT *
+	FROM logdb.logdbapp_log as A join logdb.logdbapp_access_arguments as B on A.log_id = B.access_arguments_log_id
+	),
+	tmp(source_ip, method) as
+	(SELECT distinct A.source_ip, A.access_arguments_http_method
+	FROM joined_log_and_access_arguments as A
+	WHERE A.log_timestamp >= f AND A.log_timestamp <= t
+	)
+	SELECT distinct J.source_ip
+	FROM joined_log_and_access_arguments as J
+	WHERE (J.source_ip, method1) IN (SELECT tmp.source_ip, tmp.method FROM tmp) and (J.source_ip, method2) IN (SELECT tmp.source_ip, tmp.method FROM tmp);
+	 
+END; $$
+
+LANGUAGE 'plpgsql';
+
+13.
+CREATE OR REPLACE FUNCTION logdb.stored_function13(f timestamp, t timestamp)
+	RETURNS TABLE (
+		source_ip VARCHAR(50)
+	)
+AS $$
+BEGIN
+	RETURN QUERY
+	SELECT A.source_ip
+	FROM logdb.logdbapp_log as A join logdb.logdbapp_access_arguments as B
+	ON A.log_id = B.access_arguments_log_id
+	WHERE A.log_timestamp >= f and A.log_timestamp <= t
+	GROUP BY A.source_ip
+	HAVING COUNT(distinct B.access_arguments_http_method) >= 4
+	ORDER BY A.source_ip;
+	 
+END; $$
+
+LANGUAGE 'plpgsql';
+
+#Search based on ip
+CREATE OR REPLACE FUNCTION logdb.search_based_on_ip(ip VARCHAR(50))
+	RETURNS TABLE (
+		log_id integer
+	)
+AS $$
+BEGIN
+	RETURN QUERY
+	SELECT A.log_id
+	FROM (
+		SELECT A.log_id as log_id
+		FROM logdb.logdbapp_log as A
+		WHERE A.source_ip = ip
+		UNION
+		SELECT A.namesystem_destinations_log_id as log_id
+		FROM logdb.logdbapp_namesystem_destinations as A
+		WHERE A.namesystem_destinations_dest_ip = ip
+	) as A;
+END; $$
+
+LANGUAGE 'plpgsql';

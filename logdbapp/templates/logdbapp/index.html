@@ -1,0 +1,15 @@
+<h1> Welcome to LOGDB </h1>
+<p> Logged in as: {{ user.username }}</p>
+{% if not user.is_staff %}
+<a href='/logdb/profile/'> Profile </a> <br> <br>
+{% endif %}
+<a href='/logdb/logout/'> Logout </a>
+<h4>What would you like to do next? </h5>
+<ol>
+	<li> <a href='/logdb/storedfunction1/'>Find total logs per type within a time range and sort them in descending order. </a> </li> <br>
+	<li> <a href='/logdb/storedfunction2/'>Find total logs per day for a specific action type and time range. </a> </li> <br>
+	<li> <a href='/logdb/storedfunction3/'>Find the most common log per source IP for a specific day. </a> </li> <br>
+	<li> <a href='/logdb/searchbyip/'>Find all logs associated with a specific IP (source or destination) </a> </li> <br>
+	<li> <a href='/logdb/new/'>Insert a new log. </a> </li>
+
+</ol>

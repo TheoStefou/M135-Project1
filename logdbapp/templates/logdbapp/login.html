@@ -1,0 +1,12 @@
+<h1>Login to LOGDB</h1>
+<form action='/logdb/login/' method='post'>
+	{% csrf_token %}
+	<table>
+		{{ form.as_table }}
+	</table>
+	<input type='submit' value='Login'>
+</form>
+{% if retry %}
+<p style="color:red"> Please try again! </p>
+{% endif %}
+<p> Not registered? <a href='/logdb/signup/' > Signup </a> </p>

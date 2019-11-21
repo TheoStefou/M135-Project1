@@ -1,0 +1,40 @@
+<script>
+	function loading() {
+		let x = document.getElementById("load");
+		x.style.display = "block";
+	}
+</script>
+<h3>Find the most common log per source IP for a specific day.</h3>
+<a href='/logdb/'>Home</a><br><br>
+<form action='/logdb/storedfunction3/' method='post'>
+	{% csrf_token %}
+	<table>
+		{{ form.as_table }}
+	</table>
+	<input  onclick="loading()" type='submit' value='Go'>
+</form>
+
+{% if date_format_error %}
+<p style="color:red">Date should be in format: YYYY/MM/DD</p>
+{% endif %}
+
+
+<p id="load" style="display: none">Loading...</p>
+{% if has_results %}
+<br> <br>
+<p>{{ results|length }} results:</p>
+<div style="width:fit-content;height:500px;overflow-y:auto;">
+<table style="border:1px solid black; border-collapse: collapse;">
+	<tr>
+		<th style="border: 1px solid black;">source ip</th>
+		<th style="border: 1px solid black;">log type</th>
+	</tr>
+	{% for r in results %}
+		<tr>
+			<td style="border: 1px solid black;"> {{r.0}} </td>
+			<td style="border: 1px solid black;"> {{r.1}} </td>
+		</tr>
+	{% endfor %}
+</table>
+</div>
+{% endif %}
